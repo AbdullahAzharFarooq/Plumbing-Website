@@ -3,17 +3,20 @@ const cors = require("cors");
 const pool = require("./database/db");
 require("dotenv").config();
 
-const path = require("path");
-
 const { GoogleGenAI } = require("@google/genai");
 const businessData = require("../businessdata");
 
+const sendEmail = require("./services/emailservice");
 
 const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY
+    apiKey: process.env.GEMINI_API_KEY
 });
 
 const app = express();
+
+/* =========================
+   DATABASE CONNECTION
+========================= */
 
 pool.query("SELECT NOW()")
     .then(result => {
@@ -23,72 +26,90 @@ pool.query("SELECT NOW()")
         console.error("DATABASE ERROR:", error.message);
     });
 
+/* =========================
+   MIDDLEWARE
+========================= */
 
-const sendEmail = require("./services/emailservice");
-app.use(cors({
-  origin: process.env.FRONTEND_URL,
-  credentials: true
-}));
+app.use(
+    cors({
+        origin: process.env.FRONTEND_URL,
+        credentials: true
+    })
+);
 
 app.use(express.json());
 
+/* =========================
+   HEALTH CHECK
+========================= */
+
 app.get("/", (req, res) => {
-  res.json({
-    message: "Elite Plumbing API is running"
-  });
+    res.json({
+        message: "Elite Plumbing API is running"
+    });
 });
 
-app.post('/api/contact', async (req, res) => {
-    try{
-        const { name, email, phone, message} = req.body;
+/* =========================
+   CONTACT API
+========================= */
 
-        if(!name){
+app.post("/api/contact", async (req, res) => {
+    try {
+        const { name, email, phone, message } = req.body;
+
+        if (!name) {
             return res.status(400).json({
-                message : "Name is required!"
+                message: "Name is required!"
             });
         }
 
         if (!email) {
             return res.status(400).json({
-                message : "Email is required!"
+                message: "Email is required!"
             });
         }
 
         if (!message) {
             return res.status(400).json({
-                message : "Message field is required!"
+                message: "Message field is required!"
             });
         }
 
-        // Adding the contacts to database
-
+        // Add contact to database
         await pool.query(
-        'INSERT INTO contact_messages (full_name, email, phone, message) VALUES ($1, $2, $3, $4)',
-        [name, email, phone, message ]
-       )
+            `INSERT INTO contact_messages
+            (full_name, email, phone, message)
+            VALUES ($1, $2, $3, $4)`,
+            [name, email, phone, message]
+        );
 
-       await sendEmail(
-         name,
-         email,
-         phone,
-         message
-       );
+        // Send email
+        await sendEmail(
+            name,
+            email,
+            phone,
+            message
+        );
 
-
-       return res.status(201).json({
-        message : "Successfully added in the database..."
-       })
+        return res.status(201).json({
+            message: "Successfully added in the database..."
+        });
 
     } catch (error) {
+        console.error("CONTACT ERROR:", error);
+
         return res.status(500).json({
-            message : error.message
+            message: error.message
         });
     }
-})
+});
+
+/* =========================
+   CHAT API
+========================= */
 
 app.post("/api/chat", async (req, res) => {
     try {
-
         const { messages = [] } = req.body;
 
         if (!Array.isArray(messages) || messages.length === 0) {
@@ -101,8 +122,9 @@ app.post("/api/chat", async (req, res) => {
         // Keep only the last 10 messages
         const recentMessages = messages.slice(-10);
 
-        // The last message is the current user's question
-        const currentMessage = recentMessages[recentMessages.length - 1];
+        // Last message = current user question
+        const currentMessage =
+            recentMessages[recentMessages.length - 1];
 
         if (
             !currentMessage ||
@@ -115,7 +137,7 @@ app.post("/api/chat", async (req, res) => {
             });
         }
 
-        // Previous messages, excluding the current question
+        // Previous messages
         const previousMessages = recentMessages.slice(0, -1);
 
         const reply = await generateGeminiResponse(
@@ -129,7 +151,6 @@ app.post("/api/chat", async (req, res) => {
         });
 
     } catch (error) {
-
         console.error("CHAT ERROR:", error);
 
         return res.status(500).json({
@@ -138,6 +159,10 @@ app.post("/api/chat", async (req, res) => {
         });
     }
 });
+
+/* =========================
+   GEMINI RESPONSE
+========================= */
 
 async function generateGeminiResponse(message, history) {
 
@@ -189,9 +214,8 @@ RULES:
     return response.text;
 }
 
+/* =========================
+   VERCEL EXPORT
+========================= */
 
-app.listen(process.env.PORT || 5000, () => {
-  console.log(
-    `Server running on http://localhost:${process.env.PORT || 5000}`
-  );
-});
+module.exports = app;
