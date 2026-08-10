@@ -4,7 +4,7 @@ const pool = require("./database/db");
 require("dotenv").config();
 
 const { GoogleGenAI } = require("@google/genai");
-const businessData = require("../businessdata");
+const businessData = require("./businessdata");
 
 const sendEmail = require("./services/emailservice");
 
